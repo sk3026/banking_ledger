@@ -49,4 +49,19 @@ async function sendRegistrationEmail(userEmail, name) {
     await sendEmail(userEmail, subject, text, html);
 }
 
-module.exports = { sendEmail, sendRegistrationEmail };
+async function sendTransactionEmail(userEmail, name, amount, fromAccount, toAccount) {
+    const subject = 'Transaction Alert from Banking Ledger';
+    const text = `Hi ${name},\n\nA transaction of ${amount} has been made from account ${fromAccount} to account ${toAccount}.\n\nBest regards,\nThe Banking Ledger Team`;
+    const html = `<p>Hi ${name},</p><p>A transaction of <strong>${amount}</strong> has been made from account <strong>${fromAccount}</strong> to account <strong>${toAccount}</strong>.</p><p>Best regards,<br>The Banking Ledger Team</p>`;
+
+    await sendEmail(userEmail, subject, text, html);
+}
+async function sendTransactionfailureEmail(userEmail, name, amount, fromAccount, toAccount, reason) {
+    const subject = 'Transaction Failure Alert from Banking Ledger';
+    const text = `Hi ${name},\n\nA transaction of ${amount} from account ${fromAccount} to account ${toAccount} has failed. Reason: ${reason}.\n\nBest regards,\nThe Banking Ledger Team`;
+    const html = `<p>Hi ${name},</p><p>A transaction of <strong>${amount}</strong> from account <strong>${fromAccount}</strong> to account <strong>${toAccount}</strong> has failed. Reason: <strong>${reason}</strong>.</p><p>Best regards,<br>The Banking Ledger Team</p>`; 
+    
+    await sendEmail(userEmail, subject, text, html);
+}
+
+module.exports = { sendEmail, sendRegistrationEmail, sendTransactionEmail, sendTransactionfailureEmail };
