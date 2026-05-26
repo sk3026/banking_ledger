@@ -8,11 +8,21 @@ const authRouter=require("./routes/auth.routes")
 
 const transactionRoutes=require("./routes/transaction.routes")
 
+const cors = require("cors");
+
+
+
 
 
 const app = express();
 
-app.use(express.json()) //allow express to read data form request body
+
+app.use(cors({
+   origin: true,
+   credentials: true
+}));
+
+app.use(express.json()) 
 app.use(cookieParser()) 
 
 
