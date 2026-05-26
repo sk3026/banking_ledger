@@ -1,5 +1,7 @@
 const transactionModel = require("../models/transaction.model");
+
 const ledgerModel = require("../models/ledger.model");
+
 const accountModel = require("../models/accounts.model");
 
 const mongoose = require("mongoose");
@@ -14,9 +16,24 @@ const emailService = require("../services/email.service");
 
 async function createTransaction(req, res) {
 
-    const session = await mongoose.startSession();
+    const session =
+        await mongoose.startSession();
 
     try {
+
+        console.log(
+            "===== CREATE TRANSACTION ====="
+        );
+
+        console.log(
+            "REQUEST BODY:",
+            req.body
+        );
+
+        console.log(
+            "LOGGED IN USER:",
+            req.user
+        );
 
         session.startTransaction();
 
@@ -28,7 +45,9 @@ async function createTransaction(req, res) {
         } = req.body;
 
         /**
-         * Validate request
+         * ---------------------------------------------------
+         * VALIDATION
+         * ---------------------------------------------------
          */
 
         if (
@@ -37,8 +56,10 @@ async function createTransaction(req, res) {
             !amount ||
             !idempotencyKey
         ) {
+
             return res.status(400).json({
-                message: "All fields are required",
+                message:
+                    "All fields are required",
                 status: "failed"
             });
         }
@@ -48,11 +69,18 @@ async function createTransaction(req, res) {
          */
 
         if (
-            !mongoose.Types.ObjectId.isValid(fromAccount) ||
-            !mongoose.Types.ObjectId.isValid(toAccount)
+            !mongoose.Types.ObjectId.isValid(
+                fromAccount
+            ) ||
+
+            !mongoose.Types.ObjectId.isValid(
+                toAccount
+            )
         ) {
+
             return res.status(400).json({
-                message: "Invalid account id",
+                message:
+                    "Invalid account id",
                 status: "failed"
             });
         }
@@ -62,8 +90,10 @@ async function createTransaction(req, res) {
          */
 
         if (amount <= 0) {
+
             return res.status(400).json({
-                message: "Amount must be greater than 0",
+                message:
+                    "Amount must be greater than 0",
                 status: "failed"
             });
         }
@@ -73,47 +103,97 @@ async function createTransaction(req, res) {
          */
 
         if (fromAccount === toAccount) {
+
             return res.status(400).json({
-                message: "Cannot transfer to same account",
+                message:
+                    "Cannot transfer to same account",
                 status: "failed"
             });
         }
 
         /**
-         * Find accounts
+         * ---------------------------------------------------
+         * FIND ACCOUNTS
+         * ---------------------------------------------------
          */
 
-        const fromUserAccount = await accountModel
-            .findById(fromAccount)
-            .session(session);
+        const fromUserAccount =
+            await accountModel.findById(
+                fromAccount
+            ).session(session);
 
-        const toUserAccount = await accountModel
-            .findById(toAccount)
-            .session(session);
+        const toUserAccount =
+            await accountModel.findById(
+                toAccount
+            ).session(session);
 
-        if (!fromUserAccount || !toUserAccount) {
+        console.log(
+            "FROM ACCOUNT:",
+            fromUserAccount
+        );
+
+        console.log(
+            "TO ACCOUNT:",
+            toUserAccount
+        );
+
+        if (
+            !fromUserAccount ||
+            !toUserAccount
+        ) {
+
             return res.status(404).json({
-                message: "One or both accounts not found",
+                message:
+                    "One or both accounts not found",
                 status: "failed"
             });
         }
 
         /**
-         * Check account status
+         * ---------------------------------------------------
+         * SECURITY CHECK
+         * ---------------------------------------------------
+         * User can only send from own account
          */
 
         if (
-            fromUserAccount.status !== "active" ||
-            toUserAccount.status !== "active"
+            fromUserAccount.user.toString() !==
+            req.user._id.toString()
         ) {
-            return res.status(400).json({
-                message: "One or both accounts are inactive",
+
+            return res.status(403).json({
+                message:
+                    "Unauthorized account access",
                 status: "failed"
             });
         }
 
         /**
-         * Idempotency check
+         * ---------------------------------------------------
+         * ACCOUNT STATUS CHECK
+         * ---------------------------------------------------
+         */
+
+        if (
+            fromUserAccount.status !==
+            "active" ||
+
+            toUserAccount.status !==
+            "active"
+        ) {
+
+            return res.status(400).json({
+                message:
+                    "One or both accounts are inactive",
+
+                status: "failed"
+            });
+        }
+
+        /**
+         * ---------------------------------------------------
+         * IDEMPOTENCY CHECK
+         * ---------------------------------------------------
          */
 
         const existingTransaction =
@@ -123,22 +203,35 @@ async function createTransaction(req, res) {
 
         if (existingTransaction) {
 
+            console.log(
+                "EXISTING TRANSACTION:",
+                existingTransaction
+            );
+
             if (
-                existingTransaction.status === "completed"
+                existingTransaction.status ===
+                "completed"
             ) {
+
                 return res.status(200).json({
                     message:
                         "Transaction already processed",
+
                     status: "success",
+
                     data: existingTransaction
                 });
             }
 
             if (
-                existingTransaction.status === "pending"
+                existingTransaction.status ===
+                "pending"
             ) {
+
                 return res.status(200).json({
-                    message: "Transaction pending",
+                    message:
+                        "Transaction pending",
+
                     status: "pending"
                 });
             }
@@ -146,110 +239,201 @@ async function createTransaction(req, res) {
             return res.status(400).json({
                 message:
                     "Previous transaction failed/reversed",
+
                 status: "failed"
             });
         }
 
         /**
-         * Check balance
+         * ---------------------------------------------------
+         * CHECK BALANCE
+         * ---------------------------------------------------
          */
 
         const balance =
             await fromUserAccount.getBalance();
 
+        console.log(
+            "CURRENT BALANCE:",
+            balance
+        );
+
         if (balance < amount) {
+
             return res.status(400).json({
                 message:
                     `Insufficient balance. Current balance is ${balance}`,
+
                 status: "failed"
             });
         }
 
         /**
-         * Create transaction
+         * ---------------------------------------------------
+         * CREATE TRANSACTION
+         * ---------------------------------------------------
          */
 
         const transaction =
             await transactionModel.create([{
+
                 fromAccount,
+
                 toAccount,
+
                 amount,
+
                 idempotencyKey,
+
                 status: "pending"
+
             }], { session });
 
-        const createdTransaction = transaction[0];
+        const createdTransaction =
+            transaction[0];
+
+        console.log(
+            "TRANSACTION CREATED:",
+            createdTransaction
+        );
 
         /**
-         * Debit ledger
+         * ---------------------------------------------------
+         * DEBIT ENTRY
+         * ---------------------------------------------------
          */
 
-        await ledgerModel.create([{
-            account: fromAccount,
-            amount,
-            transaction: createdTransaction._id,
-            type: "debit"
-        }], { session });
+        const debitEntry =
+            await ledgerModel.create([{
+
+                account: fromAccount,
+
+                amount,
+
+                transaction:
+                    createdTransaction._id,
+
+                type: "debit"
+
+            }], { session });
+
+        console.log(
+            "DEBIT ENTRY:",
+            debitEntry
+        );
 
         /**
-         * Credit ledger
+         * ---------------------------------------------------
+         * CREDIT ENTRY
+         * ---------------------------------------------------
          */
 
-        await ledgerModel.create([{
-            account: toAccount,
-            amount,
-            transaction: createdTransaction._id,
-            type: "credit"
-        }], { session });
+        const creditEntry =
+            await ledgerModel.create([{
+
+                account: toAccount,
+
+                amount,
+
+                transaction:
+                    createdTransaction._id,
+
+                type: "credit"
+
+            }], { session });
+
+        console.log(
+            "CREDIT ENTRY:",
+            creditEntry
+        );
 
         /**
-         * Complete transaction
+         * ---------------------------------------------------
+         * COMPLETE TRANSACTION
+         * ---------------------------------------------------
          */
 
-        createdTransaction.status = "completed";
+        createdTransaction.status =
+            "completed";
 
         await createdTransaction.save({
             session
         });
 
+        console.log(
+            "TRANSACTION COMPLETED"
+        );
+
         /**
-         * Commit transaction
+         * ---------------------------------------------------
+         * COMMIT TRANSACTION
+         * ---------------------------------------------------
          */
 
         await session.commitTransaction();
 
+        console.log(
+            "TRANSACTION COMMITTED"
+        );
+
         /**
-         * Send email
+         * ---------------------------------------------------
+         * SEND EMAIL
+         * ---------------------------------------------------
          */
 
         try {
 
-            await emailService.sendTransactionEmail(
+            await emailService
+                .sendTransactionEmail(
+
                 req.user.email,
+
                 req.user.name,
+
                 amount,
+
                 fromAccount,
+
                 toAccount
+            );
+
+            console.log(
+                "EMAIL SENT SUCCESSFULLY"
             );
 
         } catch (emailError) {
 
             console.log(
-                "Email failed:",
+                "EMAIL ERROR:",
                 emailError.message
             );
         }
 
         return res.status(200).json({
-            message: "Transaction successful",
+
+            message:
+                "Transaction successful",
+
             status: "success",
+
             data: createdTransaction
         });
 
     } catch (error) {
 
+        console.log(
+            "TRANSACTION ERROR:",
+            error
+        );
+
         if (session.inTransaction()) {
+
             await session.abortTransaction();
+
+            console.log(
+                "TRANSACTION ABORTED"
+            );
         }
 
         return res.status(500).json({
@@ -260,6 +444,8 @@ async function createTransaction(req, res) {
     } finally {
 
         session.endSession();
+
+        console.log("SESSION ENDED");
     }
 }
 
@@ -269,11 +455,19 @@ async function createTransaction(req, res) {
  * ---------------------------------------------------
  */
 
-async function createInitialFunds(req, res) {
+async function createInitialFunds(
+    req,
+    res
+) {
 
-    const session = await mongoose.startSession();
+    const session =
+        await mongoose.startSession();
 
     try {
+
+        console.log(
+            "===== INITIAL FUNDS ====="
+        );
 
         session.startTransaction();
 
@@ -292,8 +486,10 @@ async function createInitialFunds(req, res) {
             !amount ||
             !idempotencyKey
         ) {
+
             return res.status(400).json({
-                message: "All fields are required",
+                message:
+                    "All fields are required",
                 status: "failed"
             });
         }
@@ -303,6 +499,7 @@ async function createInitialFunds(req, res) {
          */
 
         if (amount <= 0) {
+
             return res.status(400).json({
                 message:
                     "Amount must be greater than 0",
@@ -322,7 +519,8 @@ async function createInitialFunds(req, res) {
         if (!toUserAccount) {
 
             return res.status(404).json({
-                message: "Account not found",
+                message:
+                    "Account not found",
                 status: "failed"
             });
         }
@@ -359,7 +557,9 @@ async function createInitialFunds(req, res) {
             return res.status(200).json({
                 message:
                     "Transaction already processed",
+
                 status: "success",
+
                 data: existingTransaction
             });
         }
@@ -370,11 +570,18 @@ async function createInitialFunds(req, res) {
 
         const transaction =
             await transactionModel.create([{
-                fromAccount: systemAccount._id,
+
+                fromAccount:
+                    systemAccount._id,
+
                 toAccount,
+
                 amount,
+
                 idempotencyKey,
+
                 status: "pending"
+
             }], { session });
 
         const createdTransaction =
@@ -385,23 +592,34 @@ async function createInitialFunds(req, res) {
          */
 
         await ledgerModel.create([{
-            account: systemAccount._id,
+
+            account:
+                systemAccount._id,
+
             amount,
+
             transaction:
                 createdTransaction._id,
+
             type: "debit"
+
         }], { session });
 
         /**
-         * Credit user account
+         * Credit receiver account
          */
 
         await ledgerModel.create([{
+
             account: toAccount,
+
             amount,
+
             transaction:
                 createdTransaction._id,
+
             type: "credit"
+
         }], { session });
 
         /**
@@ -422,15 +640,24 @@ async function createInitialFunds(req, res) {
         await session.commitTransaction();
 
         return res.status(201).json({
+
             message:
                 "Initial funds added successfully",
+
             status: "success",
+
             data: createdTransaction
         });
 
     } catch (error) {
 
+        console.log(
+            "INITIAL FUND ERROR:",
+            error
+        );
+
         if (session.inTransaction()) {
+
             await session.abortTransaction();
         }
 
